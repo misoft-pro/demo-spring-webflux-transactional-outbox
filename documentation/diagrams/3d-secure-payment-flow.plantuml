@@ -1,0 +1,181 @@
+@startuml
+actor Cardholder
+participant Merchant
+participant "Payment Gateway" as PG
+participant "Acquirer" as AR
+participant "Card Network" as DSS
+participant "Issuer Bank" as IB
+
+Cardholder -> Merchant: Initiates Payment
+note right
+Cardholder selects items and
+proceeds to checkout.
+end note
+Cardholder -> Merchant: Enters Payment Card Details
+note right
+{
+  "card_number": "4111111111111111",
+  "expiry_date": "12/25",
+  "cvv": "123"
+}
+end note
+
+Merchant -> PG: Sends Payment Request
+note right
+{
+  "merchant_id": "amazon_123",
+  "order_id": "order_456",
+  "amount": 100.00,
+  "currency": "USD",
+  "card_number": "4111111111111111",
+  "expiry_date": "12/25",
+  "cvv": "123"
+}
+end note
+
+PG -> AR: Initiates 3D Secure Authentication
+note right
+{
+  "transaction_id": "txn_789",
+  "amount": 100.00,
+  "currency": "USD",
+  "card_number": "4111111111111111",
+  "merchant_name": "Amazon",
+  "merchant_url": "https://www.amazon.com",
+  "gateway_callback_url": "https://www.adyen.com/callback"
+}
+end note
+
+AR -> DSS: Initiates 3D Secure Authentication
+note right
+{
+  "transaction_id": "txn_789",
+  "amount": 100.00,
+  "currency": "USD",
+  "card_number": "4111111111111111",
+  "merchant_name": "Amazon",
+  "merchant_url": "https://www.amazon.com",
+  "acquirer_callback_url": "https://www.acquirer.com/3ds/callback"
+}
+end note
+DSS -> IB : Authenticate
+
+IB -> IB: Generates Redirect URL
+note right
+URL is generated dynamically
+and includes transaction ID,
+session ID, and a secure token.
+end note
+
+IB -> DSS: Sends Redirect URL
+DSS -> AR: Sends Redirect URL
+note right
+{
+  "transaction_id": "txn_789",
+  "redirect_url": "https://www.3dsecureauth.com/authenticate?
+                          tx_id=txn_789&session_id=sess_123&token=abc123"
+}
+end note
+
+AR -> PG: Sends Redirect URL
+
+PG -> Merchant: Sends Redirect URL
+
+Merchant -> Cardholder: Redirects to Authentication Page
+
+Cardholder -> IB: Performs Authentication (Enter OTP)
+note right
+{
+  "transaction_id": "txn_789",
+  "otp": "654321"
+}
+end note
+
+IB -> IB: Verifies Authentication
+note right
+{
+  "transaction_id": "txn_789",
+  "otp": "654321"
+}
+end note
+
+IB -> Cardholder: redirect to merchant_url with Order status page
+
+IB --> AR: Sends Authentication Result on Acquirer callback_url
+note right
+{
+  "transaction_id": "txn_789",
+  "authentication_result": "Success",
+  "authentication_code": "AUTH_SUCCESS"
+}
+end note
+
+AR -> IB: Processes Payment Authorization
+
+alt Authentication Successful
+    note right
+    {
+      "transaction_id": "txn_789",
+      "amount": 100.00,
+      "currency": "USD",
+      "card_number": "4111111111111111",
+      "expiry_date": "12/25",
+      "cvv": "123",
+      "authentication_code": "AUTH_SUCCESS"
+    }
+    end note
+
+    IB -> AR: Sends Payment Authorization Success
+    note right
+    {
+      "transaction_id": "txn_789",
+      "authorization_result": "Approved",
+      "authorization_code": "AUTH_APPROVED"
+    }
+    end note
+
+    AR --> PG: Send Payment Success on gateway_callback_url
+
+    PG --> Merchant: Sends Payment Success \n to merchant_callback_url
+    note right
+    {
+      "order_id": "order_456",
+      "transaction_id": "txn_789",
+      "authorization_result": "Approved",
+      "authorization_code": "AUTH_APPROVED"
+    }
+    end note
+    Cardholder -> Merchant: poll order status from Status page
+    Merchant -> Cardholder: Successful Transaction
+    note right
+    Transaction completed successfully.
+    end note
+else Authentication Failed
+    IB -> AR: Send Payment Authorization Failure
+    note right
+    {
+      "transaction_id": "txn_789",
+      "authentication_result": "Failure",
+      "error_code": "AUTH_FAILED"
+    }
+    end note
+
+    AR --> PG: Send Payment Failed on gateway_callback_url
+
+    PG --> Merchant: Sends Payment Failure \n to merchant_callback_url
+    note right
+    {
+      "order_id": "order_456",
+      "transaction_id": "txn_789",
+      "authentication_result": "Failure",
+      "error_code": "AUTH_FAILED"
+    }
+    end note
+    Cardholder -> Merchant: poll order status from Status page
+    Merchant -> Cardholder: Transaction Failed
+    note right
+    Transaction failed
+    end note
+end
+
+@enduml
